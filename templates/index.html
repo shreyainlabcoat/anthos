@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>BLOOM — Spring Vision</title>
+  <title>ANTHOS — Spring Vision</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -170,6 +170,24 @@
       background: #111;
     }
 
+    /* Camera switch button */
+    #cam-switch {
+      position: absolute; bottom: 10px; right: 10px; z-index: 10;
+      background: #000000cc;
+      border: 3px solid var(--cyan);
+      box-shadow: 3px 3px 0 #000, 0 0 10px var(--cyan);
+      color: var(--cyan);
+      font-family: 'Press Start 2P', monospace;
+      font-size: 8px;
+      padding: 7px 10px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      text-shadow: 0 0 6px var(--cyan);
+      touch-action: manipulation;
+      display: none; /* shown once cameras are enumerated */
+    }
+    #cam-switch:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #000; }
+
     /* Neon corner brackets */
     .corner {
       position: absolute; width: 20px; height: 20px;
@@ -249,10 +267,10 @@
 
 <body>
   <div class="stars" id="stars" aria-hidden="true"></div>
-  <div class="bg-flower" style="top:5%;  left:4%;  animation-delay:0s">🌷</div>
-  <div class="bg-flower" style="top:12%; right:5%; animation-delay:1.8s">🌸</div>
-  <div class="bg-flower" style="top:60%; left:2%; animation-delay:0.9s">🌼</div>
-  <div class="bg-flower" style="top:72%; right:3%; animation-delay:2.5s">🌺</div>
+  <div class="bg-flower" style="top:5%;  left:4%;  animation-delay:0s">*</div>
+  <div class="bg-flower" style="top:12%; right:5%; animation-delay:1.8s">+</div>
+  <div class="bg-flower" style="top:60%; left:2%; animation-delay:0.9s">*</div>
+  <div class="bg-flower" style="top:72%; right:3%; animation-delay:2.5s">+</div>
 
   <div id="aria-announce" aria-live="polite" aria-atomic="true" role="status"></div>
 
@@ -260,7 +278,7 @@
 
     <!-- Title -->
     <header id="topbar" role="banner">
-      <div id="title" aria-label="BLOOM Spring Vision App">🌷 BLOOM</div>
+      <div id="title" aria-label="ANTHOS Spring Vision App">ANTHOS</div>
       <div id="subtitle">
         POINT CAMERA AT A FLOWER · TAP KEYS TO EXPLORE
       </div>
@@ -282,17 +300,17 @@
         aria-label="Live webcam — point at a flower to hear music"></video>
 
       <div id="no-camera" role="alert" aria-label="No camera detected">
-        <span class="icon" aria-hidden="true">📷</span>
         <span>NO CAMERA DETECTED</span>
         <span style="font-size:8px;color:#ff88cc">CHECK BROWSER PERMISSIONS AND RELOAD</span>
       </div>
 
+      <button id="cam-switch" aria-label="Switch camera">SWITCH CAM</button>
       <canvas id="capture-canvas" aria-hidden="true"></canvas>
     </section>
 
     <!-- Piano keys -->
     <section id="piano-section" aria-label="Piano keyboard">
-      <div id="piano-label" aria-hidden="true">♪ TAP A KEY TO PLAY ♪</div>
+      <div id="piano-label" aria-hidden="true">TAP A KEY TO PLAY</div>
       <div id="piano" role="group" aria-label="Piano keys">
 
         <button class="key" data-note="D4"  aria-label="Play D 4" tabindex="0">
@@ -333,12 +351,8 @@
 
   // Notes shown on the piano keys for each flower
   const FLOWER_KEYS = {
-    "Tulip":          ["D4",  "F#4", "A4",  "B4",  "E4"],
-    "Rose":           ["A4",  "C5",  "E4",  "G4",  "F4"],
-    "Sunflower":      ["G4",  "B4",  "D5",  "E5",  "C5"],
-    "Daisy":          ["C5",  "E5",  "G5",  "D5",  "G4"],
-    "Lavender":       ["F4",  "A4",  "C5",  "Bb4", "G4"],
-    "Eastern Redbud": ["E4",  "G4",  "B4",  "D5",  "A4"],
+    "Tulip":          ["D5", "F#5", "A5", "B4", "D4"],
+    "Eastern Redbud": ["B3", "D4",  "F#4", "A4", "G4"],
   };
   const DEFAULT_KEYS = ["D4", "E4", "F#4", "A4", "B4"];
 
@@ -361,11 +375,60 @@
     }
   })();
 
+  // ── Text-to-speech ───────────────────────────────────────────
+  let lastSpokenStatus = "";
+
+  function speak(text, interrupt = false) {
+    if (!window.speechSynthesis) return;
+    if (interrupt) window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.rate   = 1.05;
+    utt.pitch  = 1.0;
+    utt.volume = 1.0;
+    window.speechSynthesis.speak(utt);
+  }
+
+  // Speak on load after a short delay (let page settle)
+  setTimeout(() => {
+    speak(
+      "Welcome to Anthos. Point your camera at a tulip or an Eastern Redbud tree. " +
+      "Music will play automatically when a flower is detected. " +
+      "Tap the coloured keys at the bottom to explore the flower notes.",
+      true
+    );
+  }, 800);
+
   function setStatus(text, cls) {
     statusEl.textContent = text;
     statusEl.className   = cls || "";
     announce.textContent = "";
     setTimeout(() => { announce.textContent = text; }, 50);
+
+    // Speak status only when it meaningfully changes
+    const speakMap = {
+      "SCANNING...":        null,                               // silent — too frequent
+      "TULIP FOUND!":       "Tulip detected! Music is playing.",
+      "EASTERN REDBUD FOUND!": "Eastern Redbud detected! Music is playing.",
+      "FLOWER FOUND!":      "Flower detected! Music is playing.",
+      "NO CAMERA DETECTED": "No camera detected. Please check your browser permissions and reload.",
+      "SWITCHING...":       "Switching camera.",
+      "RECONNECTING...":    "Reconnecting to server.",
+      "BAD API KEY":        "API key error. Please check configuration.",
+    };
+
+    // For any "X FOUND!" pattern not in map
+    const spoken = speakMap.hasOwnProperty(text)
+      ? speakMap[text]
+      : text.includes("FOUND!")
+        ? text.replace("FOUND!", "detected! Music is playing.").toLowerCase()
+        : null;
+
+    if (spoken && spoken !== lastSpokenStatus) {
+      lastSpokenStatus = spoken;
+      speak(spoken, true);
+    }
+    // Reset so next detection speaks again
+    if (!text.includes("FOUND!")) lastSpokenStatus = "";
   }
 
   function updatePianoKeys(flowerName) {
@@ -438,10 +501,10 @@
 
   function captureFrame() {
     if (!video.videoWidth) return null;
-    canvas.width  = Math.min(video.videoWidth,  640);
-    canvas.height = Math.min(video.videoHeight, 480);
+    canvas.width  = Math.min(video.videoWidth,  320);
+    canvas.height = Math.min(video.videoHeight, 240);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/jpeg", 0.6);
+    return canvas.toDataURL("image/jpeg", 0.5);
   }
 
   async function analyzeFrame() {
@@ -457,59 +520,110 @@
     return body;
   }
 
+  // All discovered camera devices and current index
+  let allCameras   = [];
+  let activeCamIdx = 0;
+  let activeStream = null;
+  const camSwitchBtn = document.getElementById("cam-switch");
+
   async function startStream(stream) {
     return new Promise((resolve, reject) => {
       video.srcObject = stream;
-      video.onloadedmetadata = () => {
-        video.play().then(resolve).catch(reject);
-      };
+      video.onloadedmetadata = () => video.play().then(resolve).catch(reject);
       video.onerror = reject;
       setTimeout(() => reject(new Error("video timeout")), 8000);
     });
   }
 
-  async function initCamera() {
-    // Build a prioritised list of constraints to try
-    const sets = [];
+  async function openCamera(deviceId) {
+    const constraints = deviceId
+      ? { video: { deviceId: { exact: deviceId } } }
+      : { video: true };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    await startStream(stream);
+    if (activeStream) activeStream.getTracks().forEach(t => t.stop());
+    activeStream = stream;
+  }
 
-    // Enumerate first — if permission was already granted (e.g. after Chrome reload)
-    // deviceIds will be populated without needing to open a stream first
+  async function initCamera() {
+    // Step 1: enumerate — may already have IDs if permission was granted before
+    let cams = [];
     try {
       const devs = await navigator.mediaDevices.enumerateDevices();
-      const cams  = devs.filter(d => d.kind === "videoinput" && d.deviceId);
-      console.log("Cameras:", cams.map(c => c.label || c.deviceId.slice(0, 8)));
-
-      // Prefer external (index 1), then built-in (index 0)
-      if (cams.length > 1) sets.push({ video: { deviceId: { exact: cams[1].deviceId } } });
-      if (cams.length > 0) sets.push({ video: { deviceId: { exact: cams[0].deviceId } } });
+      cams = devs.filter(d => d.kind === "videoinput" && d.deviceId);
     } catch (_) {}
 
-    // Fallbacks in case enumeration returned nothing useful
-    sets.push({ video: { facingMode: { ideal: "environment" } } });
-    sets.push({ video: true });
-
-    for (const constraints of sets) {
-      let stream = null;
+    // Step 2: if IDs are blank (permission not yet granted), get any stream first
+    const hasRealIds = cams.some(c => c.deviceId.length > 0 && c.label);
+    if (!hasRealIds) {
       try {
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-        await startStream(stream);
-        // Success
-        video.style.display    = "block";
-        noCamera.style.display = "none";
-        setStatus("SCANNING...", "");
-        startPolling();
-        return;
+        const perm = await navigator.mediaDevices.getUserMedia({ video: true });
+        perm.getTracks().forEach(t => t.stop());
+        // Re-enumerate now that permission is granted
+        const devs2 = await navigator.mediaDevices.enumerateDevices();
+        cams = devs2.filter(d => d.kind === "videoinput" && d.deviceId);
       } catch (e) {
-        console.warn("Camera attempt failed:", constraints, e);
-        if (stream) stream.getTracks().forEach(t => t.stop());
+        video.style.display    = "none";
+        noCamera.style.display = "flex";
+        setStatus("NO CAMERA DETECTED", "error");
+        return;
       }
     }
 
-    // All attempts failed
-    video.style.display    = "none";
-    noCamera.style.display = "flex";
-    setStatus("NO CAMERA DETECTED", "error");
+    allCameras = cams;
+    console.log("Cameras:", allCameras.map(c => c.label || c.deviceId.slice(0, 8)));
+
+    // Step 3: open preferred camera directly — external (index 1) first
+    const preferIdx = allCameras.length > 1 ? 1 : 0;
+    let opened = false;
+
+    for (let i = preferIdx; i >= 0; i--) {
+      try {
+        await openCamera(allCameras[i]?.deviceId);
+        activeCamIdx = i;
+        opened = true;
+        break;
+      } catch (e) {
+        console.warn("Camera index", i, "failed:", e);
+      }
+    }
+
+    // Last resort fallback
+    if (!opened) {
+      try {
+        await openCamera(null);
+        opened = true;
+      } catch (e) {
+        video.style.display    = "none";
+        noCamera.style.display = "flex";
+        setStatus("NO CAMERA DETECTED", "error");
+        return;
+      }
+    }
+
+    video.style.display    = "block";
+    noCamera.style.display = "none";
+    if (allCameras.length > 1) camSwitchBtn.style.display = "block";
+    setStatus("SCANNING...", "");
+    startPolling();
   }
+
+  // Cycle through cameras on button press
+  camSwitchBtn.addEventListener("pointerdown", async (e) => {
+    e.preventDefault();
+    if (allCameras.length < 2) return;
+    activeCamIdx = (activeCamIdx + 1) % allCameras.length;
+    const label  = allCameras[activeCamIdx].label || "CAM " + activeCamIdx;
+    setStatus("SWITCHING...", "reconnecting");
+    try {
+      await openCamera(allCameras[activeCamIdx].deviceId);
+      setStatus("SCANNING...", "");
+      speak("Camera switched to " + label, true);
+    } catch (e) {
+      console.error("Switch failed:", e);
+      setStatus("SWITCH FAILED", "error");
+    }
+  });
 
   function startPolling() {
     let errCount = 0;
@@ -544,8 +658,8 @@
         isRequesting = false;
       }
     }
-    setInterval(tick, 3000);
-    setTimeout(tick, 1000);
+    setInterval(tick, 2000);
+    setTimeout(tick, 800);
   }
 
   document.querySelectorAll(".key").forEach(key => {
@@ -555,6 +669,9 @@
       setTimeout(() => key.classList.remove("pressed", "flash"), 160);
       await ensureToneStarted();
       pianySynth.triggerAttackRelease(key.dataset.note, "8n");
+      // Say the note name — e.g. "F#5" → "F sharp 5"
+      const noteLabel = key.dataset.note.replace("#", " sharp ");
+      speak(noteLabel, false);
     };
     key.addEventListener("pointerdown", play);
     key.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") play(e); });
