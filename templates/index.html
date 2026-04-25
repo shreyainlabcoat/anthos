@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>BLOOM — Spring Vision</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+
+  <style>
+    /* ── Reset ────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0a0a0a;
+      --orange:  #FF6B00;
+      --yellow:  #FFE500;
+      --pink:    #FF3EAC;
+      --cyan:    #00F5FF;
+      --green:   #00FF88;
+      --white:   #FFFFFF;
+      --key1: #FF6B00;
+      --key2: #FFE500;
+      --key3: #FF3EAC;
+      --key4: #00F5FF;
+      --key5: #00FF88;
+    }
+
+    /* Lock to viewport — no scroll */
+    html, body {
+      width: 100%; height: 100vh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--white);
+      font-family: 'Press Start 2P', monospace;
+    }
+
+    /* Scanline overlay */
+    body::after {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 3px,
+        rgba(0,0,0,0.1) 3px, rgba(0,0,0,0.1) 4px
+      );
+      z-index: 9999;
+    }
+
+    /* Stars */
+    .stars { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+    .star {
+      position: absolute; width: 3px; height: 3px;
+      background: var(--yellow);
+      animation: twinkle 2s infinite alternate;
+    }
+    .star:nth-child(3n) { background: var(--pink); }
+    .star:nth-child(5n) { background: var(--cyan); width: 5px; height: 5px; }
+    .star:nth-child(7n) { background: var(--green); width: 2px; height: 2px; }
+    @keyframes twinkle {
+      from { opacity: 0.1; transform: scale(1); }
+      to   { opacity: 0.9; transform: scale(1.5); }
+    }
+
+    /* Background flowers */
+    .bg-flower {
+      position: fixed; pointer-events: none;
+      font-size: 20px; opacity: 0.13;
+      animation: floatFlower 7s ease-in-out infinite alternate; z-index: 0;
+    }
+    @keyframes floatFlower {
+      from { transform: translateY(0) rotate(-5deg); }
+      to   { transform: translateY(-12px) rotate(8deg); }
+    }
+
+    /* ── Main layout — strict 100vh flex column ───────────────── */
+    #app {
+      position: relative; z-index: 1;
+      display: flex; flex-direction: column; align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      padding: 8px 10px 10px;
+      gap: 7px;
+      width: 100%;
+    }
+
+    /* ── Top bar ──────────────────────────────────────────────── */
+    #topbar {
+      flex-shrink: 0;
+      width: 100%; max-width: 720px;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+    }
+
+    #title {
+      font-size: clamp(20px, 5.5vw, 34px);
+      color: var(--yellow);
+      text-shadow: 3px 3px 0 #000, 0 0 24px var(--orange);
+      letter-spacing: 5px;
+      line-height: 1.1;
+    }
+
+    #subtitle {
+      font-size: clamp(6px, 1.4vw, 9px);
+      color: var(--cyan);
+      letter-spacing: 3px;
+      text-shadow: 0 0 10px var(--cyan);
+      text-align: center;
+      line-height: 1.8;
+    }
+
+    /* ── Status ───────────────────────────────────────────────── */
+    #status-wrap {
+      flex-shrink: 0;
+      width: 100%; max-width: 720px; text-align: center;
+    }
+
+    #status {
+      display: inline-block;
+      font-size: clamp(13px, 3.5vw, 22px);
+      padding: 8px 18px;
+      border: 4px solid var(--yellow);
+      box-shadow: 5px 5px 0 #000, 0 0 18px var(--yellow);
+      background: #1a1800;
+      color: var(--yellow);
+      letter-spacing: 2px;
+      min-width: 220px;
+      text-shadow: 0 0 10px var(--yellow);
+    }
+
+    #status.found {
+      color: var(--green); border-color: var(--green);
+      background: #001a08;
+      box-shadow: 5px 5px 0 #000, 0 0 24px var(--green);
+      text-shadow: 0 0 14px var(--green);
+      animation: flash 0.6s step-end infinite;
+    }
+    #status.error {
+      color: var(--pink); border-color: var(--pink);
+      background: #1a001a;
+      box-shadow: 5px 5px 0 #000, 0 0 18px var(--pink);
+      text-shadow: 0 0 10px var(--pink);
+    }
+    #status.reconnecting {
+      color: var(--orange); border-color: var(--orange);
+      background: #1a0800;
+      box-shadow: 5px 5px 0 #000, 0 0 18px var(--orange);
+      text-shadow: 0 0 10px var(--orange);
+    }
+
+    @keyframes flash {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.2; }
+    }
+
+    /* ── Camera — flex: 1 fills ALL remaining space ───────────── */
+    #camera-wrap {
+      flex: 1;
+      min-height: 0;          /* critical: lets flex child shrink below content size */
+      width: 100%; max-width: 720px;
+      position: relative;
+    }
+
+    #video {
+      width: 100%; height: 100%;  /* fill the flex container exactly */
+      object-fit: cover; display: block;
+      border: 4px solid var(--orange);
+      box-shadow: 6px 6px 0 #000, 0 0 20px var(--orange);
+      background: #111;
+    }
+
+    /* Neon corner brackets */
+    .corner {
+      position: absolute; width: 20px; height: 20px;
+      border-color: var(--cyan); border-style: solid; z-index: 2;
+      box-shadow: 0 0 6px var(--cyan);
+    }
+    .corner.tl { top: -4px; left: -4px;   border-width: 4px 0 0 4px; }
+    .corner.tr { top: -4px; right: -4px;  border-width: 4px 4px 0 0; }
+    .corner.bl { bottom: -4px; left: -4px;  border-width: 0 0 4px 4px; }
+    .corner.br { bottom: -4px; right: -4px; border-width: 0 4px 4px 0; }
+
+    #no-camera {
+      display: none;
+      width: 100%; height: 100%;
+      border: 4px solid var(--pink);
+      background: #1a0011;
+      justify-content: center; align-items: center;
+      flex-direction: column; gap: 12px;
+      font-size: 11px; color: var(--pink); text-align: center; padding: 20px;
+    }
+    #no-camera .icon { font-size: 40px; }
+
+    #capture-canvas { display: none; }
+
+    /* ── Piano section ────────────────────────────────────────── */
+    #piano-section {
+      flex-shrink: 0;
+      width: 100%; max-width: 720px;
+    }
+
+    #piano-label {
+      font-size: 8px; color: var(--cyan);
+      letter-spacing: 2px; margin-bottom: 6px;
+      text-align: center; text-shadow: 0 0 8px var(--cyan);
+    }
+
+    #piano { display: flex; gap: 5px; width: 100%; }
+
+    .key {
+      flex: 1;
+      height: 78px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 4px;
+      border: 4px solid #000;
+      box-shadow: 4px 4px 0 #000;
+      color: #000;
+      font-family: 'Press Start 2P', monospace;
+      cursor: pointer;
+      user-select: none; -webkit-user-select: none;
+      touch-action: manipulation;
+      transition: transform 0.05s, box-shadow 0.05s;
+      -webkit-tap-highlight-color: transparent;
+      outline: none;
+    }
+
+    .key:nth-child(1) { background: var(--key1); border-color: #883200; }
+    .key:nth-child(2) { background: var(--key2); border-color: #887700; }
+    .key:nth-child(3) { background: var(--key3); border-color: #881060; }
+    .key:nth-child(4) { background: var(--key4); border-color: #006680; }
+    .key:nth-child(5) { background: var(--key5); border-color: #007744; }
+
+    .key:focus-visible { outline: 4px solid #fff; outline-offset: 2px; }
+
+    .key .key-note  { font-size: clamp(11px, 3vw, 16px); font-weight: 900; }
+    .key .key-label { font-size: 7px; letter-spacing: 1px; opacity: 0.8; }
+
+    .key.pressed, .key:active { transform: translateY(4px); box-shadow: 0 0 0 #000; }
+    .key.flash { filter: brightness(1.6); }
+
+    /* ── Aria live region ─────────────────────────────────────── */
+    #aria-announce {
+      position: absolute; width: 1px; height: 1px;
+      overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="stars" id="stars" aria-hidden="true"></div>
+  <div class="bg-flower" style="top:5%;  left:4%;  animation-delay:0s">🌷</div>
+  <div class="bg-flower" style="top:12%; right:5%; animation-delay:1.8s">🌸</div>
+  <div class="bg-flower" style="top:60%; left:2%; animation-delay:0.9s">🌼</div>
+  <div class="bg-flower" style="top:72%; right:3%; animation-delay:2.5s">🌺</div>
+
+  <div id="aria-announce" aria-live="polite" aria-atomic="true" role="status"></div>
+
+  <main id="app" role="main">
+
+    <!-- Title -->
+    <header id="topbar" role="banner">
+      <div id="title" aria-label="BLOOM Spring Vision App">🌷 BLOOM</div>
+      <div id="subtitle">
+        POINT CAMERA AT A FLOWER · TAP KEYS TO EXPLORE
+      </div>
+    </header>
+
+    <!-- Status -->
+    <section id="status-wrap" aria-label="Detection status">
+      <div id="status" role="alert" aria-live="assertive">SCANNING...</div>
+    </section>
+
+    <!-- Camera -->
+    <section id="camera-wrap" aria-label="Live camera feed">
+      <div class="corner tl" aria-hidden="true"></div>
+      <div class="corner tr" aria-hidden="true"></div>
+      <div class="corner bl" aria-hidden="true"></div>
+      <div class="corner br" aria-hidden="true"></div>
+
+      <video id="video" autoplay playsinline muted
+        aria-label="Live webcam — point at a flower to hear music"></video>
+
+      <div id="no-camera" role="alert" aria-label="No camera detected">
+        <span class="icon" aria-hidden="true">📷</span>
+        <span>NO CAMERA DETECTED</span>
+        <span style="font-size:8px;color:#ff88cc">CHECK BROWSER PERMISSIONS AND RELOAD</span>
+      </div>
+
+      <canvas id="capture-canvas" aria-hidden="true"></canvas>
+    </section>
+
+    <!-- Piano keys -->
+    <section id="piano-section" aria-label="Piano keyboard">
+      <div id="piano-label" aria-hidden="true">♪ TAP A KEY TO PLAY ♪</div>
+      <div id="piano" role="group" aria-label="Piano keys">
+
+        <button class="key" data-note="D4"  aria-label="Play D 4" tabindex="0">
+          <span class="key-note">D4</span>
+          <span class="key-label">ROOT</span>
+        </button>
+        <button class="key" data-note="E4"  aria-label="Play E 4" tabindex="0">
+          <span class="key-note">E4</span>
+          <span class="key-label">2ND</span>
+        </button>
+        <button class="key" data-note="F#4" aria-label="Play F sharp 4" tabindex="0">
+          <span class="key-note">F#4</span>
+          <span class="key-label">3RD</span>
+        </button>
+        <button class="key" data-note="A4"  aria-label="Play A 4" tabindex="0">
+          <span class="key-note">A4</span>
+          <span class="key-label">5TH</span>
+        </button>
+        <button class="key" data-note="B4"  aria-label="Play B 4" tabindex="0">
+          <span class="key-note">B4</span>
+          <span class="key-label">6TH</span>
+        </button>
+
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+  "use strict";
+
+  const video    = document.getElementById("video");
+  const noCamera = document.getElementById("no-camera");
+  const canvas   = document.getElementById("capture-canvas");
+  const ctx      = canvas.getContext("2d");
+  const statusEl = document.getElementById("status");
+  const announce = document.getElementById("aria-announce");
+
+  // Notes shown on the piano keys for each flower
+  const FLOWER_KEYS = {
+    "Tulip":          ["D4",  "F#4", "A4",  "B4",  "E4"],
+    "Rose":           ["A4",  "C5",  "E4",  "G4",  "F4"],
+    "Sunflower":      ["G4",  "B4",  "D5",  "E5",  "C5"],
+    "Daisy":          ["C5",  "E5",  "G5",  "D5",  "G4"],
+    "Lavender":       ["F4",  "A4",  "C5",  "Bb4", "G4"],
+    "Eastern Redbud": ["E4",  "G4",  "B4",  "D5",  "A4"],
+  };
+  const DEFAULT_KEYS = ["D4", "E4", "F#4", "A4", "B4"];
+
+  let toneStarted = false, melodySynth = null, pianySynth = null;
+  let melodyPart = null, masterGain = null;
+  let currentFlower = null, isPlaying = false;
+  let isRequesting = false, fadeOutTimer = null;
+
+  // Stars
+  (function() {
+    const c = document.getElementById("stars");
+    for (let i = 0; i < 60; i++) {
+      const s = document.createElement("div");
+      s.className = "star";
+      s.style.left = Math.random() * 100 + "vw";
+      s.style.top  = Math.random() * 100 + "vh";
+      s.style.animationDuration = (1 + Math.random() * 2.5) + "s";
+      s.style.animationDelay    = (Math.random() * 3) + "s";
+      c.appendChild(s);
+    }
+  })();
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className   = cls || "";
+    announce.textContent = "";
+    setTimeout(() => { announce.textContent = text; }, 50);
+  }
+
+  function updatePianoKeys(flowerName) {
+    const notes  = (flowerName && FLOWER_KEYS[flowerName]) || DEFAULT_KEYS;
+    const keys   = document.querySelectorAll(".key");
+    keys.forEach((key, i) => {
+      const note = notes[i] || DEFAULT_KEYS[i];
+      key.dataset.note = note;
+      key.querySelector(".key-note").textContent = note;
+    });
+  }
+
+  async function ensureToneStarted() {
+    if (toneStarted) return;
+    await Tone.start();
+    toneStarted = true;
+    masterGain = new Tone.Gain(0).toDestination();
+    melodySynth = new Tone.Synth({
+      oscillator: { type: "sine" },
+      envelope: { attack: 0.1, decay: 0.3, sustain: 0.65, release: 1.1 },
+      volume: -6,
+    }).connect(masterGain);
+    pianySynth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "sine" },
+      envelope: { attack: 0.04, decay: 0.18, sustain: 0.5, release: 0.9 },
+      volume: -8,
+    }).toDestination();
+  }
+
+  function buildMelodyPart(melody, bpm) {
+    Tone.Transport.bpm.value = bpm;
+    const events = [];
+    let t = 0;
+    for (const note of melody) {
+      events.push([t, { pitch: note.pitch, dur: note.duration, vel: note.velocity }]);
+      t += note.duration;
+    }
+    if (melodyPart) { melodyPart.dispose(); melodyPart = null; }
+    melodyPart = new Tone.Part((time, n) => {
+      melodySynth.triggerAttackRelease(n.pitch, n.dur, time, n.vel);
+    }, events);
+    melodyPart.loop = true;
+    melodyPart.loopEnd = t;
+    melodyPart.start(0);
+  }
+
+  async function startMelody(flowerData) {
+    await ensureToneStarted();
+    if (fadeOutTimer) { clearTimeout(fadeOutTimer); fadeOutTimer = null; }
+    if (isPlaying && currentFlower === flowerData.flower_name) return;
+    currentFlower = flowerData.flower_name;
+    isPlaying = true;
+    buildMelodyPart(flowerData.melody, flowerData.tempo_bpm);
+    masterGain.gain.cancelScheduledValues(Tone.now());
+    masterGain.gain.rampTo(1, 0.9);
+    if (Tone.Transport.state !== "started") Tone.Transport.start();
+  }
+
+  function stopMelody() {
+    if (!isPlaying || !masterGain) return;
+    isPlaying = false; currentFlower = null;
+    masterGain.gain.cancelScheduledValues(Tone.now());
+    masterGain.gain.rampTo(0, 2);
+    fadeOutTimer = setTimeout(() => {
+      Tone.Transport.stop();
+      if (melodyPart) melodyPart.stop();
+      fadeOutTimer = null;
+    }, 2300);
+  }
+
+  function captureFrame() {
+    if (!video.videoWidth) return null;
+    canvas.width  = Math.min(video.videoWidth,  640);
+    canvas.height = Math.min(video.videoHeight, 480);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.6);
+  }
+
+  async function analyzeFrame() {
+    const imageB64 = captureFrame();
+    if (!imageB64) return null;
+    const res  = await fetch("/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_base64: imageB64 }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) { const e = new Error(`HTTP ${res.status}`); e.data = body; throw e; }
+    return body;
+  }
+
+  async function startStream(stream) {
+    return new Promise((resolve, reject) => {
+      video.srcObject = stream;
+      video.onloadedmetadata = () => {
+        video.play().then(resolve).catch(reject);
+      };
+      video.onerror = reject;
+      setTimeout(() => reject(new Error("video timeout")), 8000);
+    });
+  }
+
+  async function initCamera() {
+    // Build a prioritised list of constraints to try
+    const sets = [];
+
+    // Enumerate first — if permission was already granted (e.g. after Chrome reload)
+    // deviceIds will be populated without needing to open a stream first
+    try {
+      const devs = await navigator.mediaDevices.enumerateDevices();
+      const cams  = devs.filter(d => d.kind === "videoinput" && d.deviceId);
+      console.log("Cameras:", cams.map(c => c.label || c.deviceId.slice(0, 8)));
+
+      // Prefer external (index 1), then built-in (index 0)
+      if (cams.length > 1) sets.push({ video: { deviceId: { exact: cams[1].deviceId } } });
+      if (cams.length > 0) sets.push({ video: { deviceId: { exact: cams[0].deviceId } } });
+    } catch (_) {}
+
+    // Fallbacks in case enumeration returned nothing useful
+    sets.push({ video: { facingMode: { ideal: "environment" } } });
+    sets.push({ video: true });
+
+    for (const constraints of sets) {
+      let stream = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        await startStream(stream);
+        // Success
+        video.style.display    = "block";
+        noCamera.style.display = "none";
+        setStatus("SCANNING...", "");
+        startPolling();
+        return;
+      } catch (e) {
+        console.warn("Camera attempt failed:", constraints, e);
+        if (stream) stream.getTracks().forEach(t => t.stop());
+      }
+    }
+
+    // All attempts failed
+    video.style.display    = "none";
+    noCamera.style.display = "flex";
+    setStatus("NO CAMERA DETECTED", "error");
+  }
+
+  function startPolling() {
+    let errCount = 0;
+    async function tick() {
+      if (isRequesting) return;
+      isRequesting = true;
+      try {
+        const data = await analyzeFrame();
+        errCount = 0;
+        if (data && data.flower_detected) {
+          const name = (data.flower_name || "FLOWER").toUpperCase();
+          setStatus(name + " FOUND!", "found");
+          updatePianoKeys(data.flower_name);
+          startMelody(data);
+        } else {
+          if (isPlaying) {
+            stopMelody();
+            updatePianoKeys(null);
+          }
+          setStatus("SCANNING...", "");
+        }
+      } catch (err) {
+        errCount++;
+        console.error("Analyze error:", err);
+        const msg = (err.data && err.data.error) ? err.data.error : (err.message || "");
+        if (msg.includes("invalid_api_key") || msg.includes("Incorrect API")) {
+          setStatus("BAD API KEY", "error");
+        } else if (errCount > 2) {
+          setStatus("RECONNECTING...", "reconnecting");
+        }
+      } finally {
+        isRequesting = false;
+      }
+    }
+    setInterval(tick, 3000);
+    setTimeout(tick, 1000);
+  }
+
+  document.querySelectorAll(".key").forEach(key => {
+    const play = async (e) => {
+      e.preventDefault();
+      key.classList.add("pressed", "flash");
+      setTimeout(() => key.classList.remove("pressed", "flash"), 160);
+      await ensureToneStarted();
+      pianySynth.triggerAttackRelease(key.dataset.note, "8n");
+    };
+    key.addEventListener("pointerdown", play);
+    key.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") play(e); });
+  });
+
+  document.addEventListener("pointerdown", () => {
+    if (!toneStarted) ensureToneStarted();
+  }, { once: true });
+
+  initCamera();
+  </script>
+</body>
+</html>
