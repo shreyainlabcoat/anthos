@@ -8,7 +8,7 @@ Point a camera at a flower. Hear it bloom into sound.
 
 ## What It Does
 
-ANTHOS uses a live webcam feed and GPT-4o-mini vision to identify flowers in real time. When a supported flower is detected, it generates and plays a looping generative melody unique to that species — automatically, with no buttons required. Large, colourful piano keys let users explore the flower's individual notes by touch. Every interaction is announced aloud via the Web Speech API so the app is fully usable without sight.
+ANTHOS uses a live webcam feed and GPT-4o-mini vision to identify flowers in real time. When a supported flower is detected, it generates and plays a looping generative melody unique to that species — automatically, with no buttons required. Large, colourful piano keys let users explore the flower's individual notes by touch. Every status change, detection event, and key tap is announced aloud via the Web Speech API so the app is fully usable without sight.
 
 ---
 
@@ -19,7 +19,7 @@ ANTHOS uses a live webcam feed and GPT-4o-mini vision to identify flowers in rea
 | Backend | Python / Flask |
 | Vision AI | OpenAI GPT-4o-mini |
 | Music | Tone.js (Web Audio API) |
-| Speech | Web Speech API (browser-native) |
+| Text-to-Speech | Web Speech API (browser-native, no extra library) |
 | Frontend | Vanilla JS, single HTML file |
 
 ---
@@ -53,6 +53,8 @@ Open **http://localhost:5000** in your browser and allow camera access.
 
 ### Eastern Redbud *(Cercis canadensis)*
 **Key: B minor · Tempo: 52 bpm · Register: Low (B3–A4) · Notes: long, sustained**
+
+The two flowers are intentionally designed to sound as different as possible — Tulip is fast, bright, and bouncy; Eastern Redbud is slow, deep, and meditative. The contrast makes the demo immediately legible by ear.
 
 ---
 
@@ -90,12 +92,28 @@ Bass-frequency sounds have been shown to activate the vestibular system and are 
 
 ANTHOS was built from the ground up for blind and low-vision users:
 
-- **Text-to-speech on every event** — page load welcome message, flower detection announcements, note names on key tap, camera switch confirmation
-- **No interaction required** — music starts automatically on detection
+- **Text-to-speech on every event** — welcome message on load, flower detection announcements ("Tulip detected, music is playing"), individual note names spoken on piano key tap, camera switch confirmation
+- **No interaction required for core experience** — music starts automatically when a flower enters frame; fades out automatically when it leaves
+- **In-app camera switcher** — a "SWITCH CAM" button cycles through all connected cameras without needing to touch browser settings
+- **Anti-hallucination guardrails** — the vision prompt requires 90%+ confidence and the flower must be the clear, dominant subject; faces, rooms, and hands return no detection
+- **Fast scanning** — GPT-4o-mini with 320x240 JPEG frames keeps round-trip API time under 2 seconds; polls every 2 seconds
+- **Dynamic piano keys** — when a flower is detected, all 5 piano keys update to that flower's characteristic scale notes
 - **Large touch targets** — piano keys are full-width, 78px tall minimum
-- **Maximum contrast palette** — neon colours on near-black background, WCAG AAA contrast ratios
+- **Maximum contrast palette** — neon colours on near-black background
 - **ARIA live regions** — all status changes announced to screen readers
 - **Keyboard accessible** — all piano keys operable via Enter/Space
+
+---
+
+## How Detection Works
+
+1. Every 2 seconds, a 320x240 JPEG frame is captured from the webcam
+2. The frame is base64-encoded and sent to the Flask `/analyze` endpoint
+3. GPT-4o-mini vision evaluates the frame against a strict two-flower prompt
+4. If a flower is detected with high confidence, the API returns a JSON object containing flower name, musical key, tempo, and an 8-note melody array
+5. Tone.js schedules the melody as a looping `Tone.Part` and fades it in over 0.9 seconds
+6. When the flower leaves frame, the melody fades out over 2 seconds
+7. Piano keys update live to reflect the detected flower's scale
 
 ---
 
