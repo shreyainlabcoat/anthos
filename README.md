@@ -12,6 +12,14 @@ ANTHOS uses a live webcam feed and GPT-4o-mini vision to identify flowers in rea
 
 ---
 
+## Hardware Used
+
+An **EMEET SmartCam C950** external USB webcam was used for development and demo. The app auto-detects and prefers an external camera over the built-in one at startup, with an in-app **SWITCH CAM** button to toggle between cameras.
+
+![EMEET SmartCam C950 used for demo](camera.jpeg)
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -21,6 +29,7 @@ ANTHOS uses a live webcam feed and GPT-4o-mini vision to identify flowers in rea
 | Music | Tone.js (Web Audio API) |
 | Text-to-Speech | Web Speech API (browser-native, no extra library) |
 | Frontend | Vanilla JS, single HTML file |
+| Camera | EMEET SmartCam C950 (external USB webcam) |
 
 ---
 
